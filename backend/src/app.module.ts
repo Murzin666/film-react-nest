@@ -1,34 +1,31 @@
 import { Module } from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MongooseModule } from '@nestjs/mongoose';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import * as path from 'node:path';
 
 import { FilmsController } from './films/films.controller';
 import { OrderController } from './order/order.controller';
 import { FilmsService } from './films/films.service';
 import { OrderService } from './order/order.service';
-import { Film, FilmSchema } from './films/schemas/film.schema';
-import { Order, OrderSchema } from './order/schemas/order.schema';
+import { AppRepository } from './app.repository';
+import { Film } from './films/entities/film.entity';
+import { Schedule } from './films/entities/schedule.entity';
+import { Order } from './order/entities/order.entity';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      cache: true,
-      envFilePath: '.env',
+    TypeOrmModule.forRoot({
+      type: 'postgres',
+      host: process.env.DATABASE_HOST || 'localhost',
+      port: parseInt(process.env.DATABASE_PORT, 10) || 5432,
+      username: process.env.DATABASE_USERNAME || 'postgres',
+      password: process.env.DATABASE_PASSWORD || 'postgres',
+      database: process.env.DATABASE_NAME || 'prac',
+      entities: [Film, Schedule, Order],
+      synchronize: false,
+      logging: true,
     }),
-    MongooseModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        uri: configService.get<string>('DATABASE_URL'),
-      }),
-      inject: [ConfigService],
-    }),
-    MongooseModule.forFeature([
-      { name: Film.name, schema: FilmSchema },
-      { name: Order.name, schema: OrderSchema },
-    ]),
+    TypeOrmModule.forFeature([Film, Schedule, Order]),
     ServeStaticModule.forRoot({
       rootPath: path.join(__dirname, '..', 'public'),
       serveRoot: '/',
@@ -39,6 +36,6 @@ import { Order, OrderSchema } from './order/schemas/order.schema';
     }),
   ],
   controllers: [FilmsController, OrderController],
-  providers: [FilmsService, OrderService],
+  providers: [FilmsService, OrderService, AppRepository],
 })
 export class AppModule {}
