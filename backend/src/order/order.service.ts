@@ -3,18 +3,12 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import { CreateOrderDto } from './dto/order.dto';
-import { Order } from './schemas/order.schema';
-import { FilmsService } from '../films/films.service';
+import { AppRepository } from '../app.repository';
 
 @Injectable()
 export class OrderService {
-  constructor(
-    @InjectModel(Order.name) private orderModel: Model<Order>,
-    private readonly filmsService: FilmsService,
-  ) {}
+  constructor(private readonly appRepository: AppRepository) {}
 
   async create(createOrderDto: CreateOrderDto) {
     const { email, phone, tickets } = createOrderDto;
@@ -34,14 +28,12 @@ export class OrderService {
         );
       }
 
-      const allFilms = await this.filmsService.findAll();
-      const filmData = allFilms.find((f) => f.id === film);
-
+      const filmData = await this.appRepository.findFilmById(film);
       if (!filmData) {
         throw new BadRequestException(`Фильм с id ${film} не найден`);
       }
 
-      const sessionData = filmData.schedule.find((s) => s.id === session);
+      const sessionData = filmData.schedules.find((s) => s.id === session);
       if (!sessionData) {
         throw new BadRequestException(`Сеанс с id ${session} не найден`);
       }
@@ -54,23 +46,15 @@ export class OrderService {
 
       const seatKey = `${row}:${seat}`;
 
-      if (sessionData.taken.includes(seatKey)) {
+      if (sessionData.taken && sessionData.taken.includes(seatKey)) {
         throw new ConflictException(`Место ${seatKey} уже занято`);
       }
 
-      const existingOrder = await this.orderModel.findOne({
-        filmId: film,
-        sessionId: session,
-        row,
-        seat,
-      });
+      const updatedTaken = sessionData.taken
+        ? `${sessionData.taken},${seatKey}`
+        : seatKey;
 
-      if (existingOrder) {
-        throw new ConflictException(`Место ${seatKey} уже занято`);
-      }
-
-      const updatedTaken = [...sessionData.taken, seatKey];
-      await this.updateSessionTakenSeats(film, session, updatedTaken);
+      await this.appRepository.updateScheduleTakenSeats(session, updatedTaken);
 
       const orderData = {
         filmId: film,
@@ -82,23 +66,9 @@ export class OrderService {
         price: ticket.price,
       };
 
-      const createdOrder = new this.orderModel(orderData);
-      const savedOrder = await createdOrder.save();
-      orders.push(savedOrder);
+      orders.push(orderData);
     }
 
     return orders;
-  }
-
-  private async updateSessionTakenSeats(
-    filmId: string,
-    sessionId: string,
-    takenSeats: string[],
-  ): Promise<void> {
-    const filmModel = this.filmsService['filmModel'];
-    await filmModel.findOneAndUpdate(
-      { id: filmId, 'schedule.id': sessionId },
-      { $set: { 'schedule.$.taken': takenSeats } },
-    );
   }
 }
